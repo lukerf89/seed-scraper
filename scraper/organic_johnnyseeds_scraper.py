@@ -91,6 +91,14 @@ class JohnnySeedsOrganicScraper(OrganicSeedScraper):
         self.logger.info(f"Extracting product links from: {page_url}")
         products = []
 
+        # Extract category from URL (e.g., /vegetables/tomatoes/ -> Tomatoes)
+        category = None
+        # Parse URL path to get the last segment before query params
+        url_path = page_url.split('?')[0].rstrip('/')
+        path_parts = url_path.split('/')
+        if path_parts:
+            category = path_parts[-1].replace('-', ' ').title()
+
         try:
             # Navigate to page
             if self.page.url != page_url:
@@ -114,7 +122,7 @@ class JohnnySeedsOrganicScraper(OrganicSeedScraper):
 
             for tile in tiles:
                 try:
-                    product = self._extract_product_from_tile(tile)
+                    product = self._extract_product_from_tile(tile, category=category)
                     if product:
                         products.append(product)
                 except Exception as e:
@@ -127,7 +135,7 @@ class JohnnySeedsOrganicScraper(OrganicSeedScraper):
         self.logger.info(f"Extracted {len(products)} products")
         return products
 
-    def _extract_product_from_tile(self, tile) -> Optional[Dict[str, Any]]:
+    def _extract_product_from_tile(self, tile, category: str = None) -> Optional[Dict[str, Any]]:
         """Extract product info from a single tile element."""
         # Get URL
         link = tile.locator('a.tile-name-link').first
@@ -149,8 +157,24 @@ class JohnnySeedsOrganicScraper(OrganicSeedScraper):
         if not title:
             return None
 
-        # Parse botanical name
-        parsed = parse_with_botanical_field_names(title)
+        # Try to extract more specific category from product URL
+        # e.g., /flowers/zinnias/benarys-giant-series/ -> Zinnias
+        product_category = category
+        url_parts = url.split('/')
+        if len(url_parts) >= 5:
+            # URL format: domain/category/subcategory/series/product
+            # Look for common plant categories in URL path
+            for part in url_parts[3:6]:  # Check a few path segments
+                normalized = part.replace('-', ' ').title()
+                if normalized and normalized != product_category:
+                    # Check if this looks like a plant category
+                    from seed_naming_utils import COMMON_NAME_MAPPING
+                    if part.lower().rstrip('s') in COMMON_NAME_MAPPING or part.lower() in COMMON_NAME_MAPPING:
+                        product_category = normalized
+                        break
+
+        # Parse botanical name with category hint
+        parsed = parse_with_botanical_field_names(title, category=product_category)
 
         # Since we're using organic-filtered URLs (?prefn1=Organic&prefv1=true),
         # all products from this page ARE certified organic by Johnny's filter.
@@ -160,6 +184,7 @@ class JohnnySeedsOrganicScraper(OrganicSeedScraper):
             'url': url,
             'common_name': parsed.get('common_name', 'Unknown'),
             'cultivar_name': parsed.get('cultivar_name', 'N/A'),
+            'category': product_category,
             'organic_status': {
                 'is_certified_organic': True,
                 'certification_type': 'USDA Organic',

@@ -102,6 +102,12 @@ class HighMowingOrganicScraper(OrganicSeedScraper):
         current_url = page_url
         page_num = 1
 
+        # Extract category from URL (e.g., /vegetables/tomatoes.html -> Tomatoes)
+        category = None
+        category_match = re.search(r'/([^/]+)\.html', page_url)
+        if category_match:
+            category = category_match.group(1).replace('-', ' ').title()
+
         while True:
             try:
                 # Navigate to page
@@ -122,7 +128,7 @@ class HighMowingOrganicScraper(OrganicSeedScraper):
 
                 for tile in tiles:
                     try:
-                        product = self._extract_product_from_tile(tile)
+                        product = self._extract_product_from_tile(tile, category=category)
                         if product:
                             products.append(product)
                     except Exception as e:
@@ -158,7 +164,7 @@ class HighMowingOrganicScraper(OrganicSeedScraper):
             self.logger.debug(f"No next page: {e}")
         return None
 
-    def _extract_product_from_tile(self, tile) -> Optional[Dict[str, Any]]:
+    def _extract_product_from_tile(self, tile, category: str = None) -> Optional[Dict[str, Any]]:
         """Extract product info from a single tile element."""
         # Get product link
         link = tile.locator('a.product-item-link').first
@@ -179,8 +185,8 @@ class HighMowingOrganicScraper(OrganicSeedScraper):
         if not title:
             return None
 
-        # Parse botanical name
-        parsed = parse_with_botanical_field_names(title)
+        # Parse botanical name with category hint
+        parsed = parse_with_botanical_field_names(title, category=category)
 
         # High Mowing is 100% certified organic - all products are organic
         return {
@@ -188,6 +194,7 @@ class HighMowingOrganicScraper(OrganicSeedScraper):
             'url': url,
             'common_name': parsed.get('common_name', 'Unknown'),
             'cultivar_name': parsed.get('cultivar_name', 'N/A'),
+            'category': category,
             'organic_status': {
                 'is_certified_organic': True,
                 'certification_type': 'USDA Organic',

@@ -89,6 +89,12 @@ class SouthernExposureOrganicScraper(OrganicSeedScraper):
         self.logger.info(f"Extracting product links from: {page_url}")
         products = []
 
+        # Extract category from URL (e.g., /categories/tomatoes/ -> Tomatoes)
+        category = None
+        category_match = re.search(r'/categories/([^/]+)/?', page_url)
+        if category_match:
+            category = category_match.group(1).replace('-', ' ').title()
+
         try:
             # Navigate to page
             self.page.goto(page_url, timeout=30000, wait_until="domcontentloaded")
@@ -107,7 +113,7 @@ class SouthernExposureOrganicScraper(OrganicSeedScraper):
 
             for card in cards:
                 try:
-                    product = self._extract_product_from_card(card)
+                    product = self._extract_product_from_card(card, category=category)
                     if product:
                         products.append(product)
                 except Exception as e:
@@ -120,7 +126,7 @@ class SouthernExposureOrganicScraper(OrganicSeedScraper):
         self.logger.info(f"Extracted {len(products)} organic products")
         return products
 
-    def _extract_product_from_card(self, card) -> Optional[Dict[str, Any]]:
+    def _extract_product_from_card(self, card, category: str = None) -> Optional[Dict[str, Any]]:
         """Extract product info from a product card, only if organic."""
         # Check for organic certification badge (green leaf SVG)
         # The organic badge has fill="#279240" and tooltip "Certified Organic"
@@ -182,8 +188,8 @@ class SouthernExposureOrganicScraper(OrganicSeedScraper):
         # Check for heirloom badge
         is_heirloom = card.locator('[id*="Heirloom"]').count() > 0
 
-        # Parse botanical name
-        parsed = parse_with_botanical_field_names(title)
+        # Parse botanical name with category hint
+        parsed = parse_with_botanical_field_names(title, category=category)
 
         return {
             'title': title,
@@ -191,6 +197,7 @@ class SouthernExposureOrganicScraper(OrganicSeedScraper):
             'sku': item_number,
             'common_name': parsed.get('common_name', 'Unknown'),
             'cultivar_name': parsed.get('cultivar_name', 'N/A'),
+            'category': category,
             'is_heirloom': is_heirloom,
             'organic_status': {
                 'is_certified_organic': True,

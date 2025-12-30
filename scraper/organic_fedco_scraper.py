@@ -207,8 +207,8 @@ class FedcoOrganicScraper(OrganicSeedScraper):
             if not title_text:
                 title_text = abbrev_name
 
-            # Parse botanical name
-            parsed = parse_with_botanical_field_names(title_text)
+            # Parse botanical name with category hint
+            parsed = parse_with_botanical_field_names(title_text, category=category)
 
             # Check for organic badge (should always be present on /list-organic)
             has_organic_badge = item.locator('.og-eco-overlay-badge img[src*="organic"]').count() > 0
@@ -221,7 +221,7 @@ class FedcoOrganicScraper(OrganicSeedScraper):
                 'title': title_text,
                 'url': url,
                 'sku': str(item_number),
-                'common_name': parsed.get('common_name', category or 'Unknown'),
+                'common_name': parsed.get('common_name', 'Unknown'),
                 'cultivar_name': parsed.get('cultivar_name', 'N/A'),
                 'category': category,
                 'organic_status': {
