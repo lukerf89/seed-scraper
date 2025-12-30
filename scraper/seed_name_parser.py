@@ -131,34 +131,104 @@ def parse_title_with_proper_naming(title_string):
     known_common_names = get_known_common_names()
     return parse_seed_name(title_string, known_common_names)
 
-def parse_with_botanical_field_names(title_string):
+def parse_with_botanical_field_names(title_string, category=None):
     """
     Parses a product title and returns results with botanically accurate field names.
-    
+
     This function is designed to replace the legacy parse_cultivar_and_variety_from_title
     with field names that match botanical terminology.
-    
+
     Args:
         title_string (str): The product title to parse
-        
+        category (str, optional): Category hint (e.g., "Tomatoes", "Amaranths") to use
+                                  as fallback common name if not found in title
+
     Returns:
         dict: Contains 'common_name' and 'cultivar_name' fields matching botanical terminology
     """
     if not title_string:
         return {"common_name": "N/A", "cultivar_name": "N/A"}
-    
+
     # Get known common names
     known_common_names = get_known_common_names()
-    
+
     # Parse using the seed naming utility
     parsed = parse_seed_name(title_string, known_common_names)
-    
+
+    common_name = parsed['common_name']
+    cultivar_name = parsed['cultivar_name']
+
+    # If common_name looks like it should be a cultivar (not in mapping, title used as-is),
+    # try to use category as the common name
+    if category and common_name not in known_common_names:
+        # Check if common_name is actually the full title or a cultivar-like string
+        from seed_naming_utils import COMMON_NAME_MAPPING, standardize_common_name
+
+        # Normalize category (remove trailing 's', lowercase for lookup)
+        category_normalized = category.lower().rstrip('s')
+        category_with_s = category.lower()
+
+        # Check if category maps to a known common name
+        if category_normalized in COMMON_NAME_MAPPING:
+            actual_common_name = COMMON_NAME_MAPPING[category_normalized]
+            # The parsed common_name is likely the cultivar
+            if common_name != "N/A" and common_name != actual_common_name:
+                # Use full title minus common name suffix as cultivar
+                cultivar_name = common_name
+            common_name = actual_common_name
+        elif category_with_s in COMMON_NAME_MAPPING:
+            actual_common_name = COMMON_NAME_MAPPING[category_with_s]
+            if common_name != "N/A" and common_name != actual_common_name:
+                cultivar_name = common_name
+            common_name = actual_common_name
+        elif category.title() in known_common_names:
+            actual_common_name = category.title()
+            if common_name != "N/A" and common_name != actual_common_name:
+                cultivar_name = common_name
+            common_name = actual_common_name
+
+    # Clean up cultivar name - remove common name suffix if present
+    if cultivar_name != "N/A" and common_name != "N/A":
+        import re
+        # Remove the common name from the end of cultivar if present
+        pattern = re.compile(r'\s*' + re.escape(common_name) + r'\s*$', re.IGNORECASE)
+        cultivar_name = pattern.sub('', cultivar_name).strip()
+        # Also remove trailing commas, weight info, "Organic" suffix, etc.
+        cultivar_name = re.sub(r',?\s*[\d.]+\s*g\s*$', '', cultivar_name).strip()
+        cultivar_name = re.sub(r'\s*-\s*Organic\s*$', '', cultivar_name, flags=re.IGNORECASE).strip()
+        cultivar_name = re.sub(r'\s*-\s*$', '', cultivar_name).strip()
+        if not cultivar_name:
+            cultivar_name = "N/A"
+
+    # If we still don't have a good cultivar name but have a title with common name,
+    # try to extract cultivar by removing common name from original title
+    if title_string and common_name != "N/A":
+        import re
+        # Remove common name from title to get cultivar
+        clean_title = re.sub(r'\s*-\s*Organic\s*$', '', title_string, flags=re.IGNORECASE).strip()
+        clean_title = re.sub(r',?\s*[\d.]+\s*g\s*$', '', clean_title).strip()
+
+        # Check if common name is NOT in the title (category-derived)
+        if common_name.lower() not in clean_title.lower():
+            # The entire clean title is the cultivar name
+            if clean_title and clean_title != common_name:
+                cultivar_name = clean_title
+        elif cultivar_name == "N/A" or cultivar_name == common_name:
+            # Common name IS in the title, extract cultivar by removing it
+            pattern = re.compile(r'\s*' + re.escape(common_name) + r'\s*$', re.IGNORECASE)
+            potential_cultivar = pattern.sub('', clean_title).strip()
+            # Also try removing common name from beginning
+            pattern2 = re.compile(r'^' + re.escape(common_name) + r'\s*', re.IGNORECASE)
+            potential_cultivar = pattern2.sub('', potential_cultivar).strip()
+            if potential_cultivar and potential_cultivar != common_name and len(potential_cultivar) > 1:
+                cultivar_name = potential_cultivar
+
     # Return result with the two primary fields only
     result = {
-        "common_name": parsed['common_name'],
-        "cultivar_name": parsed['cultivar_name']
+        "common_name": common_name,
+        "cultivar_name": cultivar_name
     }
-    
+
     return result
 
 def format_properly(common_name, cultivar_name, additional_descriptors=None):
